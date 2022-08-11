@@ -1,0 +1,362 @@
+---
+title: "Bank Client Defaults"
+author: "Sudhakar Naidoo"
+date: "`r Sys.Date()`"
+output:
+  html_document: default
+  pdf_document: default
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+
+library(caret)
+library(tidyverse)
+
+train <- read.csv("C:/Users/YOGA12/Desktop/R/rstudio/projects/Harvard Capstone Project/CYN_train_data.csv")
+
+train1 <- read.csv("C:/Users/YOGA12/Desktop/R/rstudio/projects/Harvard Capstone Project/train1.csv")
+
+test <- read.csv("C:/Users/YOGA12/Desktop/R/rstudio/projects/Harvard Capstone Project/test_data.csv")
+
+test1 <- read.csv("C:/Users/YOGA12/Desktop/R/rstudio/projects/Harvard Capstone Project/test1.csv")
+
+tl <- ("C:/Users/YOGA12/Desktop/R/rstudio/projects/Harvard Capstone Project/train_labels.csv")
+
+```
+
+# Overview
+
+
+
+The following report is based on data from a Kaggle competition (American Express - Default Prediction) that was ongoing when this report was completed. The competition relates to identifying customers who will default on their debt repayments.
+
+The data also includes a file called train_labels.csv which identifies clients who have defaulted and those who haven't. 
+
+I used the train set and extracted just 10 000 rows from the more than 500 000 rows available. 
+Due to the time required to train the data and hardware requirements, I chose a 50/50 split. I also excluded 180 columns which were predictors.
+I would prefer an 80/20 split if I could use all the data available. This is to help ensure that the algorithm learns as much as possible before testing and deploying a machine learning model.
+Predictions didn't take long and so I felt that a 5000 row test set would better evaluate the accuracy of my model. 
+
+The variables fall into the following categories:
+
+D_* = Delinquency variables
+S_* = Spend variables
+P_* = Payment variables
+B_* = Balance variables
+R_* = Risk variables
+
+
+# Method
+
+
+
+I extracted the first 5000 rows using the code below.
+
+```{r}
+# reading 5 000 lines from train_data to use as train data
+train <- read.csv("train_data.csv", nrows = 5000)
+
+```
+
+
+
+I added column names to the train set. The columns include the customer identification number, the date and eight predictors relating to client bank transactions.
+
+```{r}
+# Add column names
+colnames(train) <- c("customer_ID","S_2", "P_2", "D_39", "B_1", "B_2", "R_1", "S_3", "D_41", "B_3")
+
+```
+
+
+
+I deleted the other 180 columns which included many more transaction related predictors.
+
+```{r}
+#delete unused columns to predict on the first 10 predictors
+train <- subset(train, select = c("customer_ID","S_2", "P_2", "D_39", "B_1","B_2", "R_1", "S_3", "D_41", "B_3"))
+
+```
+
+
+
+"train1" below represents the train set file joined by "customer_id" to the train_label.csv file so that it includes the outcome ie. the "target" which equals either 1 for a default or 0 otherwise.  
+
+I transformed the date from a character type to a date type.
+
+```{r}
+#transform to date
+train1[,2] <-as.Date(train1[,2])
+```
+
+
+
+I also transformed all other columns used. The factor relates to the "target" column ie. 1 or 0. 
+
+```{r}
+#transform to factor and numeric
+train1[,3] <- as.numeric(train1[,3])
+train1[,4] <- as.numeric(train1[,4])
+train1[,5] <- as.numeric(train1[,5])
+train1[,6] <- as.numeric(train1[,6])
+train1[,7] <- as.numeric(train1[,7])
+train1[,8] <- as.numeric(train1[,8])
+train1[,9] <- as.numeric(train1[,9])
+train1[,10] <- as.numeric(train1[,10])
+train1[,11] <- as.factor(train1[,11])
+
+```
+
+
+
+I confirmed the class of the target.
+
+```{r}
+
+#Check that "target" is a factor
+class(train1$target)
+
+```
+
+
+
+I identified 871 NAs in the train set.
+
+```{r}
+#Check for NAs
+no_nas <- ifelse(is.na(train1), 0, train1) 
+sum(is.na(train1))
+
+```
+
+
+
+I removed the rows with the NAs to ensure the model only predicts on a client when all predictors are available.
+
+```{r}
+
+# remove rows with NA's to only predict on clients when there all predictors are available
+train1 <- train1[complete.cases(train1),]
+
+```
+
+
+
+I computed the number of unique customers in the dataset and found 365 unique customers.
+
+```{r}
+# number of unique customers
+unique_customers <- train1%>%
+  group_by(customer_ID)%>%
+  summarize(n=n())%>%
+  arrange(desc(n))%>%
+  count()
+unique_customers
+
+```
+
+
+
+The histogram below plots the number of statement dates per client. It shows that most clients have about 13 statement dates.
+
+```{r, echo=FALSE}
+
+# number of statement dates per client
+train1%>%
+  group_by(customer_ID)%>%
+  summarize(n=n())%>%
+  ggplot(aes(n))+
+  geom_histogram(bins = 30, color = "black")
+
+```
+
+
+
+
+
+I read 5000 more lines from the available data to use as the test set. I skipped the first 20 000 rows. 
+
+```{r}
+
+# reading 5000 lines from train_data to use as test data
+test <- read.csv("train_data.csv", nrows = 5000, skip = 20000)
+
+```
+
+
+
+I added column names for the test set as done for the train set.
+
+```{r}
+
+# Add column names
+colnames(test) <- c("customer_ID","S_2", "P_2", "D_39", "B_1", "B_2", "R_1", "S_3", "D_41", "B_3")
+
+```
+
+
+
+I deleted columns not used for test set as done for the train set.
+
+```{r}
+
+#delete unused columns
+test <- subset(test, select = c("customer_ID","S_2", "P_2", "D_39", "B_1","B_2", "R_1", "S_3", "D_41", "B_3"))
+
+```
+
+
+
+"test1" represents the test file joined with the train_label.csv file the same way it was done for the train set.
+
+```{r}
+
+#transform to date
+test1[,2] <-as.Date(test1[,2])
+
+```
+
+
+
+Again, I transformed the data the same way I did for the train set.
+
+```{r}
+
+#transform to factor and numeric
+test1[,3] <- as.numeric(test1[,3])
+test1[,4] <- as.numeric(test1[,4])
+test1[,5] <- as.numeric(test1[,5])
+test1[,6] <- as.numeric(test1[,6])
+test1[,7] <- as.numeric(test1[,7])
+test1[,8] <- as.numeric(test1[,8])
+test1[,9] <- as.numeric(test1[,9])
+test1[,10] <- as.numeric(test1[,10])
+test1[,11] <- as.factor(test1[,11])
+
+```
+
+
+
+I checked that the target is a factor type in the test set which was required to train the model.
+
+```{r}
+
+#Check that "target" is a factor
+class(test1$target)
+
+```
+
+
+
+I checked for NAs and found 1070 of them.
+
+```{r}
+
+#Check for NAs
+no_nas <- ifelse(is.na(test1), 0, test1) 
+sum(is.na(test1))
+
+```
+
+
+
+Again, I removed the rows with NAs to ensure the model only predicts on clients with the chosen predictors available.
+
+```{r}
+
+# remove rows with NA's to only predict on clients when there all predictors are available
+test1 <- test1[complete.cases(test1),]
+
+```
+
+
+
+I checked the final dimensions of the train and test sets and found they were still approximately a 50/50 split after removing rows with NAs.
+
+```{r}
+
+# the dimensions of the train and test sets
+dim(train1)
+dim(test1)
+
+```
+
+
+
+I decided to use multiple models in an ensemble to get predictions that are more accurate than most models used in the ensemble. This is due to the nature of how an ensemble works by calculating row means across a number of models for each statement date. These row means represent the mean of the output for the different models, which is either a zero or one for each statement date. If more models output one than zero, then greater than 50% of models believe the client will default and the ensemble will predict a default. 
+
+```{r, include=FALSE}
+
+# ensembles
+set.seed(1, sample.kind = "Rounding") 
+
+models <- c("glm", "lda", "nb", "svmLinear", "knn", "gamLoess", "multinom", "qda", "rf")
+
+fit_models <- lapply(models, function(model){ 
+  print(model)
+  train(target ~ P_2+D_39+B_1+B_2+R_1+S_3+D_41+B_3, method = model, data = train1)
+}) 
+
+names(fit_models) <- models
+
+```
+
+
+
+# Results
+
+
+
+The accuracy of the ensemble was impressive at close to 82%. 
+As their was so much data available, I tested the model two more times by randomly choosing 5000 rows at a time from the available data. 
+I have included these datasets as test_data1.csv and test_data2.csv. 
+
+```{r, include=FALSE}
+
+
+predictions <- sapply(fit_models, function(x) 
+  predict(x, newdata = test1))
+dim(predictions)
+
+```
+
+
+
+The model maintained an accuracy of between 80% and 82% when tested with all three test sets.
+
+The accuracy for each model and the mean accuracy is computed below:
+
+```{r}
+
+accuracy <- colMeans(predictions == test1$target)
+accuracy
+mean(accuracy)
+
+```
+
+
+
+The ensemble accuracy is computed below:
+
+```{r}
+
+Model_Answers <- rowMeans(predictions == "1")
+y_hat <- ifelse(Model_Answers > 0.5, "1", "0")
+mean(y_hat == test1$target)
+
+```
+
+
+
+# Conclusion
+
+
+
+The model has done well to predict customers who default. However, it would be nice to use the other 180 predictors and the full dataset and compare to the results above.
+
+
+
+
+
+
